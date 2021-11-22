@@ -19,14 +19,6 @@ float y_func (int x, int y) {
     return 1.5 * x + 10.0 * y;
 }
 
-/* Constructor in order to implement emplace-back */
-//class Point {
-//    float coord[2];
-//    int index;
-//public:
-//    Point(int x, int y, int row_len): coord{x_func(x,y), y_func(x,y)}, index(y*row_len + x) {}
-//};
-
 typedef struct{
     float x_coord;
     float y_coord;
@@ -59,37 +51,40 @@ bool compare(point& a, point& b) {
     }
 }
 
-void merge_left(point* temp_buffer, int personal_size, point* recv_buffer, point* array, int rank) {
+void merge_left(point* current_receiver, point* current_array, point* current_temp, int personal_size) {
     int ia = 0, ib = 0;
 
     for (int i = 0; i < personal_size; i++) {
-//        if (rank == 0) {
-//            std::cout << array[ia].y_coord, recv_buffer[ib]
-//        }
-        if (compare(array[ia], recv_buffer[ib])) {
-            temp_buffer[i] = recv_buffer[ib];
+        if (compare(current_array[ia], current_receiver[ib])) {
+            current_temp[i] = current_receiver[ib];
             ib++;
         } else {
-            temp_buffer[i] = array[ia];
+            current_temp[i] = current_array[ia];
             ia++;
         }
     }
-    memcpy(array, temp_buffer, personal_size * sizeof(point));
+    point* temp = current_receiver;
+    current_receiver = current_array;
+    current_array = current_temp;
+    current_temp = temp;
 }
 
-void merge_right(point* temp_buffer, int personal_size, point* recv_buffer, point* array) {
+void merge_right(point* current_receiver, point* current_array, point* current_temp, int personal_size) {
     int ia = personal_size - 1, ib = personal_size - 1;
 
     for (int i = personal_size - 1; i >= 0; i--) {
-        if (compare(array[ia], recv_buffer[ib])) {
-            temp_buffer[i] = array[ia];
+        if (compare(current_array[ia], current_receiver[ib])) {
+            current_temp[i] = current_array[ia];
             ia--;
         } else {
-            temp_buffer[i] = recv_buffer[ib];
+            current_temp[i] = current_receiver[ib];
             ib--;
         }
     }
-    memcpy(array, temp_buffer, personal_size * sizeof(point));
+    point* temp = current_receiver;
+    current_receiver = current_array;
+    current_array = current_temp;
+    current_temp = temp;
 }
 
 /* сравнение двух целых */
@@ -103,8 +98,8 @@ int comp (point* a, point *b)
     return 0;
 }
 
-void BatcherSort(point *array, int length, int rank, int size, point *recv_buffer, point * temp_buffer, int personal_size) {
-    std::set<int> current_tact;
+
+void BatcherSort(int length, int rank, int size, int personal_size, point* current_receiver, point* current_array, point* current_temp) {
     int t = (int) ceil(log2(size)) - 1;
     int p_initial = (int) pow(2, t);
     int p = p_initial;
@@ -123,23 +118,20 @@ void BatcherSort(point *array, int length, int rank, int size, point *recv_buffe
             for (int i = 0; i < size; ++i) {
                 if (i < size - d and (i & p) == r) {
                     if (rank == i) {
-                        if (rank == 0) {
-                            std::cout<< "HERE" << std::endl;
-                        }
                         //std::cout << "process rank №"<<rank << " will change with " << i + d << " on iter " << iter << std::endl;
                         //std::cout.flush();
-                        MPI_Sendrecv(array, personal_size, mpi_point_type, i+d, 0, recv_buffer, personal_size,
+                        MPI_Sendrecv(current_array, personal_size, mpi_point_type, i+d, 0, current_receiver, personal_size,
                                      mpi_point_type, i+d, MPI_ANY_TAG, MPI_COMM_WORLD, nullptr);
-                        merge_left(temp_buffer, personal_size, recv_buffer, array, rank);
+                        merge_left(current_receiver, current_array, current_temp, personal_size);
                     }
 
                 } else if (((i - d) & p) == r && i-d >= 0) {
                     if (rank == i) {
                         //std::cout << "process rank №"<< rank << " will change with " << i - d << " on iter " << iter <<std::endl;
                         std::cout.flush();
-                        MPI_Sendrecv(array, personal_size, mpi_point_type, i-d, 0, recv_buffer, personal_size,
+                        MPI_Sendrecv(current_array, personal_size, mpi_point_type, i-d, 0, current_receiver, personal_size,
                                      mpi_point_type, i-d, MPI_ANY_TAG, MPI_COMM_WORLD, nullptr);
-                        merge_right(temp_buffer, personal_size, recv_buffer, array);
+                        merge_right(current_receiver, current_array, current_temp, personal_size);
                     }
                 }
             }
@@ -173,20 +165,22 @@ int main(int argc, char **argv) {
     MPI_Type_commit(&mpi_point_type);
 
     int personal_size = n1 * n2 / size;
+
     auto point_array = (point*) malloc(personal_size * sizeof(point));
     auto recv_buffer = (point*) malloc(personal_size * sizeof(point));
     auto temp_buffer = (point*) malloc(personal_size * sizeof(point));
-
     init(point_array, personal_size, n2, rank);
+
+    double time_start = MPI_Wtime();
     qsort(point_array,personal_size, sizeof(point), (int(*) (const void *, const void *)) comp);
 
-
-    BatcherSort(point_array, personal_size, rank, size, recv_buffer, temp_buffer, personal_size);
+    BatcherSort(personal_size, rank, size, personal_size, recv_buffer, point_array, temp_buffer);
 
     MPI_Barrier(MPI_COMM_WORLD);
+    double time_end = MPI_Wtime();
 
-    if(rank == 0) {
-        print_array(point_array, personal_size);
+    if (rank == 0) {
+        printf("Wall sorting time for nproc = %d is %lf", size, time_end - time_start);
     }
 
     free(point_array);
