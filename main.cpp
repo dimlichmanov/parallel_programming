@@ -1,11 +1,11 @@
 #include <iostream>
 #include <algorithm>
 #include <numeric>
-#include <random>
 #include <iterator>
 #include <vector>
 #include <set>
-#include "mpi/mpi.h"
+#include "math.h"
+#include "mpi.h"
 #include <string.h>
 
 
@@ -121,7 +121,7 @@ void BatcherSort(int length, int rank, int size, int personal_size, point* curre
                         //std::cout << "process rank №"<<rank << " will change with " << i + d << " on iter " << iter << std::endl;
                         //std::cout.flush();
                         MPI_Sendrecv(current_array, personal_size, mpi_point_type, i+d, 0, current_receiver, personal_size,
-                                     mpi_point_type, i+d, MPI_ANY_TAG, MPI_COMM_WORLD, nullptr);
+                                     mpi_point_type, i+d, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                         merge_left(current_receiver, current_array, current_temp, personal_size);
                     }
 
@@ -130,7 +130,7 @@ void BatcherSort(int length, int rank, int size, int personal_size, point* curre
                         //std::cout << "process rank №"<< rank << " will change with " << i - d << " on iter " << iter <<std::endl;
                         std::cout.flush();
                         MPI_Sendrecv(current_array, personal_size, mpi_point_type, i-d, 0, current_receiver, personal_size,
-                                     mpi_point_type, i-d, MPI_ANY_TAG, MPI_COMM_WORLD, nullptr);
+                                     mpi_point_type, i-d, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                         merge_right(current_receiver, current_array, current_temp, personal_size);
                     }
                 }
@@ -138,7 +138,6 @@ void BatcherSort(int length, int rank, int size, int personal_size, point* curre
             r = p;
         } while (q != p);
         p /= 2;
-        MPI_Barrier(MPI_COMM_WORLD);
     } while (p > 0);
 }
 
@@ -166,9 +165,9 @@ int main(int argc, char **argv) {
 
     int personal_size = n1 * n2 / size;
 
-    auto point_array = (point*) malloc(personal_size * sizeof(point));
-    auto recv_buffer = (point*) malloc(personal_size * sizeof(point));
-    auto temp_buffer = (point*) malloc(personal_size * sizeof(point));
+    point* point_array = (point*) malloc(personal_size * sizeof(point));
+    point* recv_buffer = (point*) malloc(personal_size * sizeof(point));
+    point* temp_buffer = (point*) malloc(personal_size * sizeof(point));
     init(point_array, personal_size, n2, rank);
 
     double time_start = MPI_Wtime();
